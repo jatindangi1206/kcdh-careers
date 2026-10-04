@@ -1,0 +1,60 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Careers · TSB and KCDH-A</title>
+<link rel="stylesheet" href="/style.css">
+
+<header><div class="wrap">
+  <div>
+    <h1>Careers</h1>
+    <p>Jobs and internships at Trivedi School of Biosciences | Koita Centre for Digital Health</p>
+  </div>
+  <a href="/admin">Staff sign-in</a>
+</div></header>
+
+<main class="wrap">
+  <div class="controls">
+    <input type="search" id="q" placeholder="Search title, contact, department, description…" aria-label="Search jobs and internships">
+    <select id="type" aria-label="Filter by opportunity type"><option value="">Jobs and internships</option><option value="job">Jobs</option><option value="internship">Internships</option></select>
+    <select id="centre" aria-label="Filter by centre"><option value="">All centres</option></select>
+    <select id="cat" aria-label="Filter by category"><option value="">All categories</option></select>
+  </div>
+  <button type="button" class="ghost" id="clear">Clear filters</button>
+  <p id="status" role="status" aria-live="polite"></p>
+  <button type="button" id="retry" hidden>Retry</button>
+  <div id="list"></div>
+</main>
+
+<script src="/listing.js"></script>
+<script>
+let all = [], loaded = false;
+const $ = id => document.getElementById(id);
+function render() {
+  const q = $('q').value.toLowerCase().trim();
+  const hit = all.filter(i => (!$('type').value || postingType(i) === $('type').value) && (!$('cat').value || i.category === $('cat').value) &&
+    (!$('centre').value || i.centre === $('centre').value) &&
+    (!q || [i.title, i.faculty, i.department, i.centre, i.description, i.details, i.eligibility].join(' ').toLowerCase().includes(q)));
+  $('status').textContent = loaded ? `${hit.length} open opportunit${hit.length === 1 ? 'y' : 'ies'}` : 'Loading opportunities…';
+  $('list').replaceChildren(...(hit.length ? hit.map(card) : loaded ? [el('p', { className: 'empty', textContent: all.length ? 'No matches. Try clearing your filters.' : 'There are no open opportunities right now. Please check back later.' })] : []));
+}
+async function load() {
+  $('retry').hidden = true;
+  $('status').textContent = 'Loading opportunities…';
+  try {
+    const r = await fetch('/api/internships');
+    if (!r.ok) throw new Error();
+    all = (await r.json()).sort((a, b) => a.deadline.localeCompare(b.deadline));
+    for (const [id, field] of [['centre', 'centre'], ['cat', 'category']]) {
+      const selected = $(id).value;
+      $(id).replaceChildren(el('option', { value: '', textContent: id === 'cat' ? 'All categories' : 'All centres' }),
+        ...[...new Set(all.map(i => i[field]).filter(Boolean))].sort().map(v => el('option', { value: v, textContent: v })));
+      $(id).value = selected;
+    }
+    loaded = true; render();
+  } catch { $('status').textContent = 'Could not load opportunities. Please try again.'; $('retry').hidden = false; }
+}
+for (const id of ['q', 'centre', 'cat', 'type']) $(id).addEventListener(id === 'q' ? 'input' : 'change', render);
+$('clear').onclick = () => { for (const id of ['q', 'centre', 'cat', 'type']) $(id).value = ''; render(); };
+$('retry').onclick = load;
+load();
+</script>

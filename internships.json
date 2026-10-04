@@ -1,0 +1,62 @@
+[
+  {
+    "id": "example01",
+    "title": "Single-cell transcriptomics of neural development",
+    "faculty": "Dr. A. Example",
+    "department": "Department of Biology, Developmental Genomics Lab",
+    "description": "Assist with sample prep and downstream analysis of scRNA-seq datasets from developing cortical tissue.",
+    "eligibility": "2nd year and above; introductory molecular biology; basic R or Python helpful",
+    "duration": "8 weeks, summer term",
+    "deadline": "2027-03-15",
+    "category": "Biology",
+    "apply_url": "mailto:a.example@university.edu",
+    "archived": false,
+    "owner": "jatin@ashoka.edu.in",
+    "centre": "Trivedi School of Biosciences"
+  },
+  {
+    "id": "example02",
+    "title": "Urban air quality sensing network",
+    "faculty": "Prof. B. Rao",
+    "department": "Department of Environmental Studies",
+    "description": "Deploy and calibrate low-cost PM2.5 sensors across campus and build the data pipeline that ingests their readings.",
+    "eligibility": "Any year; comfort with Python and basic statistics",
+    "duration": "10 weeks, winter term",
+    "deadline": "2026-11-30",
+    "category": "Environmental Science",
+    "apply_url": "mailto:b.rao@university.edu",
+    "archived": false,
+    "owner": "b.rao@ashoka.edu.in",
+    "centre": "Koita Centre for Digital Health"
+  },
+  {
+    "id": "example03",
+    "title": "Archival NLP for colonial-era legal records",
+    "faculty": "Dr. C. Menon",
+    "department": "Department of History / Digital Humanities Lab",
+    "description": "Build and evaluate OCR correction and named-entity extraction over a digitised corpus of 19th-century court records.",
+    "eligibility": "2nd year and above; one programming course; reading knowledge of archival English",
+    "duration": "12 weeks, part-time during semester",
+    "deadline": "2026-10-15",
+    "category": "Digital Humanities",
+    "apply_url": "mailto:c.menon@university.edu",
+    "archived": false,
+    "owner": "b.rao@ashoka.edu.in",
+    "centre": "Koita Centre for Digital Health"
+  },
+  {
+    "title": "hey",
+    "faculty": "jain",
+    "department": "",
+    "description": "this is a test",
+    "eligibility": "2nd year",
+    "duration": "8 weeks",
+    "deadline": "2026-09-02",
+    "category": "physics",
+    "apply_url": "",
+    "archived": false,
+    "id": "267ea131183a",
+    "owner": "jatin@ashoka.edu.in",
+    "centre": ""
+  }
+]

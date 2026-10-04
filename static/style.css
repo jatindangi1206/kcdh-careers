@@ -1,0 +1,85 @@
+:root {
+  --ink: #1a1a1a; --muted: #5b6169; --line: #e2e2df; --bg: #faf9f7;
+  --accent: #7a1f2b; --card: #fff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.55 Georgia, "Times New Roman", serif;
+}
+header {
+  background: var(--accent); color: #fff; padding: 28px 20px;
+}
+header .wrap { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+header h1 { margin: 0; font-size: 1.5rem; letter-spacing: .01em; }
+header p { margin: 4px 0 0; opacity: .85; font-size: .95rem; }
+header a { color: #fff; font-size: .85rem; }
+.wrap { max-width: 860px; margin: 0 auto; }
+main { padding: 28px 20px 64px; }
+.controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 24px; }
+input, select, textarea, button {
+  font: inherit; padding: 9px 11px; border: 1px solid var(--line);
+  background: #fff; color: var(--ink); border-radius: 3px;
+}
+input[type=search] { flex: 1 1 260px; }
+textarea { width: 100%; min-height: 80px; resize: vertical; }
+button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+button.ghost { background: #fff; color: var(--accent); }
+button:hover { opacity: .9; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  padding: 18px 20px; margin-bottom: 16px;
+}
+.card h2 { margin: 0 0 4px; font-size: 1.15rem; }
+.card .meta { color: var(--muted); font-size: .9rem; margin-bottom: 10px; }
+.card p { margin: 0 0 10px; }
+.card dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 14px; font-size: .93rem; }
+.card dt { color: var(--muted); }
+.card dd { margin: 0; }
+.tag {
+  display: inline-block; background: #f0ece9; color: var(--muted);
+  padding: 2px 8px; font-size: .78rem; border-radius: 2px; margin-left: 8px;
+  font-family: system-ui, sans-serif; vertical-align: middle;
+}
+.apply { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 8px 16px; border-radius: 3px; font-size: .92rem; }
+.empty { color: var(--muted); font-style: italic; padding: 40px 0; text-align: center; }
+form.admin { background: #fff; border: 1px solid var(--line); padding: 20px; margin-bottom: 28px; }
+form.admin label { display: block; margin-bottom: 12px; font-size: .9rem; color: var(--muted); }
+form.admin input, form.admin select { width: 100%; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.row label { flex: 1 1 200px; }
+.err { color: var(--accent); font-size: .9rem; min-height: 1.2em; }
+.adminrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); padding: 12px 0; }
+.adminrow small { color: var(--muted); }
+.adminrow .acts { display: flex; gap: 6px; }
+.adminrow button { font-size: .82rem; padding: 5px 10px; }
+.archived { opacity: .5; }
+.hint { color: var(--muted); font-size: .85rem; margin: 4px 0 14px; }
+.withbtn { display: flex; gap: 8px; align-items: stretch; }
+.withbtn input { flex: 1; }
+.withbtn .apply { white-space: nowrap; display: flex; align-items: center; font-family: inherit; }
+#who { font-size: .85rem; opacity: .9; margin-right: 6px; }
+
+[hidden] { display: none !important; }
+.prose { white-space: pre-wrap; overflow-wrap: anywhere; }
+.card, .adminrow, a, dd { overflow-wrap: anywhere; }
+details { margin: 12px 0; }
+summary { color: var(--accent); cursor: pointer; font-weight: bold; }
+details p { margin-top: 12px !important; }
+.card-actions { margin-top: 16px; }
+.card-actions .hint { margin: 10px 0 4px; user-select: all; }
+button:disabled { opacity: .6; cursor: wait; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+#notice { white-space: pre-wrap; }
+#preview { margin-top: 24px; }
+.controls h2 { margin: 0; flex: 1 1 180px; }
+.adminrow > div:first-child { min-width: 0; }
+.adminrow .acts { flex-wrap: wrap; }
+@media (max-width: 560px) {
+  .adminrow { align-items: flex-start; flex-direction: column; }
+  .controls > input, .controls > select { width: 100%; }
+  .row label { flex-basis: 100%; min-width: 0; }
+  .card, form.admin { padding: 16px; }
+  .card dl { grid-template-columns: 1fr; gap: 0; }
+  .card dd { margin-bottom: 8px; }
+}

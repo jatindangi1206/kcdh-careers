@@ -1,0 +1,8 @@
+auth.json
+*.tmp
+__pycache__/
+.venv/
+
+.vercel/
+.env
+.env.*

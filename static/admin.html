@@ -1,0 +1,217 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Staff · Careers · Ashoka University</title>
+<link rel="stylesheet" href="/style.css">
+
+<header><div class="wrap">
+  <div><h1>Careers · Manage postings</h1><p>Ashoka University · staff area</p></div>
+  <span><a href="/">View site</a> &nbsp; <span id="who"></span> <a href="#" id="logout" hidden>Sign out</a></span>
+</div></header>
+
+<main class="wrap">
+  <form class="admin" id="login">
+    <div class="row">
+      <label>Ashoka email<input type="email" id="email" autocomplete="username" required></label>
+      <label>Password<input type="password" id="password" autocomplete="current-password" required></label>
+    </div>
+    <button>Sign in</button>
+    <p class="err" id="loginerr" role="alert"></p>
+    <p class="hint">No account, or forgotten your password? <a id="contact" href="#">Contact the site maintainer</a> and they will
+      create or reset it for you.</p>
+  </form>
+
+  <p id="notice" role="status" aria-live="polite"></p>
+  <button type="button" class="ghost" id="retry" hidden>Retry</button>
+  <div id="panel" hidden>
+    <div class="controls"><h2>Your postings</h2>
+      <select id="type-filter" aria-label="Filter opportunity type"><option value="">Jobs and internships</option><option value="job">Jobs</option><option value="internship">Internships</option></select>
+      <select id="filter" aria-label="Filter posting status"><option value="active">Active</option><option value="archived">Archived</option><option value="expired">Expired</option><option value="all">All postings</option></select>
+      <button type="button" id="add">Add opportunity</button>
+    </div>
+    <div id="list"></div>
+    <h2 id="editor-title">Add opportunity</h2>
+    <form class="admin" id="form">
+      <input type="hidden" id="id">
+      <div class="row">
+        <label>Opportunity type<select id="posting_type"><option value="internship">Internship</option><option value="job">Job</option></select></label>
+        <label>Title *<input id="title" required></label>
+        <label>Category<input id="category" placeholder="Biology, Digital Health, Administration, …"></label>
+      </div>
+      <div class="row">
+        <label>Contact / hiring manager<input id="faculty"></label>
+        <label>Centre
+          <select id="centre">
+            <option value=""></option>
+            <option>Trivedi School of Biosciences</option>
+            <option>Koita Centre for Digital Health</option>
+            <option>Other</option>
+          </select>
+        </label>
+      </div>
+      <label>Lab / department<input id="department"></label>
+      <label>Short summary<textarea id="description"></textarea></label>
+      <label>Full details (optional)<textarea id="details" rows="6" placeholder="Responsibilities, project background, what applicants should submit…"></textarea></label>
+      <div class="row">
+        <label>Eligibility<input id="eligibility" placeholder="Qualifications, experience, or year of study…"></label>
+        <label>Duration<input id="duration" placeholder="Permanent, fixed-term, 8 weeks, …"></label>
+      </div>
+      <div class="row">
+        <label>Application deadline *<input type="date" id="deadline" required></label>
+      </div>
+      <label>Application method<select id="application_method"><option value="url">Form / website</option><option value="email">Email</option><option value="none">No destination (archived only)</option></select></label>
+      <div id="url-fields">
+        <label>Application link<input type="url" id="apply_url" placeholder="Paste the respondent link from your Google Form"></label>
+        <p class="hint">Create your own Google Form and paste its respondent link here, not its /edit link.</p>
+      </div>
+      <div id="email-fields" hidden>
+        <label>Application email<input type="email" id="apply_email"></label>
+        <label>Email subject<input id="email_subject" placeholder="Application: opportunity title"></label>
+        <p class="hint">The button opens the applicant’s email app. It does not send an email automatically.</p>
+      </div>
+      <div class="row">
+        <label>Document title (optional)<input id="document_title" placeholder="Project brief (PDF)"></label>
+        <label>Document link (optional)<input type="url" id="document_url" placeholder="https://…"></label>
+      </div>
+      <p class="hint">Link a PDF or Word document on Drive or a university website. Make sure applicants have permission to open it.</p>
+      <label><input type="checkbox" id="archived" style="width:auto"> Archived (hidden from public page)</label>
+      <button type="button" class="ghost" id="preview-button">Preview listing</button>
+      <button id="submit">Add opportunity</button>
+      <button type="button" class="ghost" id="cancel" hidden>Cancel edit</button>
+      <p class="err" id="formerr" role="alert"></p>
+    </form>
+    <section id="preview" hidden aria-label="Listing preview"></section>
+  </div>
+</main>
+
+<script src="/listing.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const FIELDS = ['title', 'faculty', 'department', 'centre', 'description', 'eligibility', 'duration', 'deadline', 'category', 'posting_type', 'apply_url', 'details', 'application_method', 'apply_email', 'email_subject', 'document_title', 'document_url'];
+let isAdmin = false, items = [], today = '', dirty = false, pending = false;
+async function api(method, url, body) {
+  let r;
+  try { r = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined }); }
+  catch { throw new Error('Connection failed. Your entered text is still here. Please try again.'); }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    if (r.status === 401 && url !== '/api/login') {
+      show({ authed: false });
+      $('loginerr').textContent = 'Your session expired. Sign in again; your entered text is preserved.';
+    }
+    throw new Error(data.error || 'Request failed. Please try again.');
+  }
+  return data;
+}
+function show(s) {
+  isAdmin = !!s.admin;
+  $('login').hidden = !!s.authed; $('panel').hidden = !s.authed; $('logout').hidden = !s.authed;
+  $('who').textContent = s.authed ? 'Signed in as ' + s.name : '';
+  if (s.authed) load();
+}
+function methodFields() {
+  const method = $('application_method').value;
+  $('url-fields').hidden = method !== 'url'; $('email-fields').hidden = method !== 'email';
+  $('apply_url').required = method === 'url'; $('apply_email').required = method === 'email';
+  $('apply_url').disabled = method !== 'url'; $('apply_email').disabled = method !== 'email'; $('email_subject').disabled = method !== 'email';
+}
+function body() { return { ...Object.fromEntries(FIELDS.map(f => [f, $(f).value])), archived: $('archived').checked }; }
+function status(i) { return i.archived ? 'archived' : i.deadline < today ? 'expired' : 'active'; }
+function render() {
+  const hits = items.filter(i => (!$('type-filter').value || postingType(i) === $('type-filter').value) && ($('filter').value === 'all' || status(i) === $('filter').value));
+  $('list').replaceChildren(...hits.sort((a, b) => a.deadline.localeCompare(b.deadline)).map(i => {
+    const row = el('div', { className: 'adminrow' + (status(i) !== 'active' ? ' archived' : '') });
+    const left = el('div');
+    left.append(el('strong', { textContent: i.title }), el('br'), el('small', { textContent: [typeLabel(i), i.faculty, i.centre, 'deadline ' + readableDate(i.deadline), status(i), isAdmin ? i.owner || 'no owner' : ''].filter(Boolean).join(' · ') }));
+    const acts = el('div', { className: 'acts' });
+    const edit = el('button', { className: 'ghost', textContent: 'Edit' }); edit.onclick = () => fill(i);
+    const arch = el('button', { className: 'ghost', textContent: i.archived ? 'Unarchive' : 'Archive' });
+    arch.onclick = () => mutate(arch, 'PUT', i, { ...i, archived: !i.archived });
+    const del = el('button', { className: 'ghost', textContent: 'Delete' });
+    del.onclick = () => confirm('Delete “' + i.title + '” permanently? Use Archive to keep it.') && mutate(del, 'DELETE', i);
+    acts.append(edit, arch, del); row.append(left, acts); return row;
+  }));
+  if (!hits.length) $('list').append(el('p', { className: 'empty', textContent: 'No postings in this view.' }));
+}
+async function mutate(button, method, i, data) {
+  button.disabled = true;
+  try { await api(method, '/api/internships/' + i.id, data); $('notice').textContent = method === 'DELETE' ? 'Posting deleted.' : 'Posting updated.'; await load(); }
+  catch (e) { $('notice').textContent = e.message; }
+  finally { button.disabled = false; }
+}
+async function load() {
+  $('retry').hidden = true;
+  $('list').textContent = 'Loading postings…';
+  try { items = await api('GET', '/api/admin/internships'); render(); }
+  catch (e) { $('notice').textContent = e.message; $('list').replaceChildren(); $('retry').hidden = false; }
+}
+function discard() { return !pending && (!dirty || confirm('Discard your unsaved changes?')); }
+function fill(i) {
+  if (!discard()) return;
+  $('form').reset(); $('id').value = i.id;
+  FIELDS.forEach(f => $(f).value = i[f] || '');
+  $('posting_type').value = postingType(i);
+  if (!i.application_method) {
+    const mail = (i.apply_url || '').startsWith('mailto:');
+    $('application_method').value = mail ? 'email' : i.apply_url ? 'url' : 'none';
+    if (mail) { $('apply_email').value = i.apply_url.slice(7).split('?')[0]; $('email_subject').value = new URLSearchParams(i.apply_url.split('?')[1] || '').get('subject') || ''; $('apply_url').value = ''; }
+  }
+  $('archived').checked = !!i.archived;
+  $('submit').textContent = 'Save changes'; $('editor-title').textContent = 'Edit opportunity';
+  $('cancel').hidden = false; $('formerr').textContent = ''; $('preview').hidden = true;
+  dirty = false; methodFields(); $('form').scrollIntoView({ behavior: 'smooth' }); $('title').focus({ preventScroll: true });
+}
+function reset() {
+  $('form').reset(); $('id').value = ''; $('posting_type').value = 'internship'; $('submit').textContent = 'Add opportunity';
+  $('editor-title').textContent = 'Add opportunity'; $('cancel').hidden = true;
+  $('formerr').textContent = ''; $('preview').hidden = true; dirty = false; methodFields();
+}
+$('form').addEventListener('input', () => { dirty = true; $('preview').hidden = true; });
+$('application_method').onchange = methodFields;
+window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+$('login').onsubmit = async e => {
+  e.preventDefault(); const button = $('login').querySelector('button'); button.disabled = true;
+  try { await api('POST', '/api/login', { email: $('email').value, password: $('password').value }); $('password').value = ''; $('loginerr').textContent = ''; show(await api('GET', '/api/session')); }
+  catch (e) { $('loginerr').textContent = e.message; }
+  finally { button.disabled = false; }
+};
+$('form').onsubmit = async e => {
+  e.preventDefault(); if (pending) return;
+  pending = true;
+  const buttons = [...$('form').querySelectorAll('button')]; buttons.forEach(b => b.disabled = true);
+  const controls = [...$('form').querySelectorAll('input, select, textarea')];
+  const data = body(), id = $('id').value; controls.forEach(c => c.disabled = true);
+  try {
+    await api(id ? 'PUT' : 'POST', '/api/internships' + (id ? '/' + id : ''), data);
+    reset(); $('notice').textContent = data.archived ? 'Saved as archived.' : id ? 'Changes saved.' : 'Opportunity published.';
+    $('type-filter').value = '';
+    $('filter').value = data.archived ? 'archived' : data.deadline < today ? 'expired' : 'active'; await load();
+  } catch (e) { $('formerr').textContent = e.message; }
+  finally { controls.forEach(c => c.disabled = false); buttons.forEach(b => b.disabled = false); pending = false; methodFields(); }
+};
+$('preview-button').onclick = () => {
+  if (!$('form').reportValidity()) return;
+  $('preview').replaceChildren(el('h2', { textContent: 'Listing preview' }), card(body()));
+  $('preview').hidden = false; $('preview').scrollIntoView({ behavior: 'smooth' });
+};
+$('cancel').onclick = () => { if (discard()) reset(); };
+$('add').onclick = () => { if (discard()) { reset(); $('form').scrollIntoView({ behavior: 'smooth' }); $('title').focus({ preventScroll: true }); } };
+$('filter').onchange = render;
+$('type-filter').onchange = render;
+$('logout').onclick = async e => {
+  e.preventDefault(); if (pending || !discard()) return;
+  try { await api('POST', '/api/logout'); reset(); items = []; $('list').replaceChildren(); show({ authed: false }); $('notice').textContent = 'Signed out.'; }
+  catch (e) { $('notice').textContent = e.message; }
+};
+async function init() {
+  $('retry').hidden = true;
+  try {
+    const config = await api('GET', '/api/config'); today = config.today;
+    if (config.maintainer_email) $('contact').href = 'mailto:' + config.maintainer_email;
+    else { $('contact').removeAttribute('href'); $('contact').textContent = 'Ask your department for the site maintainer’s contact'; }
+    show(await api('GET', '/api/session'));
+  } catch (e) { $('notice').textContent = e.message; $('retry').hidden = false; }
+}
+$('retry').onclick = init;
+methodFields(); init();
+</script>

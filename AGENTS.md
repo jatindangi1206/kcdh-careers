@@ -1,0 +1,36 @@
+# Repository Guidelines
+
+## Project Structure & Module Organization
+
+This is a Python careers board for jobs and internships with plain HTML, CSS, and JavaScript. `server.py` contains the HTTP server, authentication, posting storage, and account CLI. `static/index.html` renders public listings; `static/admin.html` manages staff postings; `static/style.css` provides shared styles; `static/listing.js` shares card rendering with staff previews. `internships.json` stores postings. `auth.json` stores accounts and password hashes and must remain untracked. `test_server.py` and `test_frontend.js` contain runnable checks. `README.md` documents operation and deployment.
+
+## Build, Test, and Development Commands
+
+There is no build step. On the documented macOS setup:
+
+```bash
+/opt/homebrew/bin/python3.13 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python server.py adduser you@ashoka.edu.in
+.venv/bin/python server.py
+.venv/bin/python test_server.py
+node test_frontend.js
+```
+
+These commands create the environment, install dependencies, create an account, serve the app at `http://localhost:8000`, and run backend and frontend checks (Node.js required for the latter). Always use `.venv/bin/python` explicitly to avoid interpreter conflicts. Use `PORT=8001 .venv/bin/python server.py` for another port. Account maintenance uses the `users`, `passwd <email>`, and `deluser <email>` subcommands.
+
+## Coding Style & Naming Conventions
+
+Match existing formatting: four-space Python indentation and two-space HTML, CSS, and JavaScript indentation. Use Python `snake_case`, JavaScript `camelCase`, and uppercase constants such as `FIELDS`. Keep the frontend and backend posting field lists aligned. No formatter or linter is configured. Prefer standard-library and native browser features; reuse existing helpers before adding dependencies or abstractions.
+
+## Testing Guidelines
+
+Tests use plain Python assertions, without a framework or coverage threshold. Run `.venv/bin/python test_server.py`; success prints `ok`. Extend these checks for changes to validation, visibility, ownership, persistence, or authentication. Use temporary files rather than live data. Frontend logic checks use Node.js built-ins; no browser or packages are needed. For interface changes, manually check public filters and staff workflows, including owner restrictions.
+
+## Commit & Pull Request Guidelines
+
+The repository currently has one initial commit, so no established commit convention exists yet. Use concise imperative messages, such as `Validate internship deadlines`. PRs should describe the problem, resulting behavior, and validation performed. Link relevant issues and include screenshots for visible UI changes.
+
+## Security & Configuration
+
+Never commit credentials, `auth.json`, or `.venv/`. Preserve ownership checks, password hashing, and cookie protections. Set `SECURE_COOKIE=1` behind production HTTPS; `MAINTAINER_EMAIL` overrides the contact link. Posting writes must retain locking and atomic replacement. Stop the server before manually editing posting data, and back up both JSON files before maintenance.

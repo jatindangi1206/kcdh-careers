@@ -1,0 +1,21 @@
+[Unit]
+Description=Ashoka Careers board
+After=network.target
+
+[Service]
+User=careers
+Group=careers
+WorkingDirectory=/srv/kcdh-careers
+EnvironmentFile=/etc/kcdh-careers.env
+ExecStart=/srv/kcdh-careers/.venv/bin/python /srv/kcdh-careers/server.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/kcdh-careers
+
+[Install]
+WantedBy=multi-user.target

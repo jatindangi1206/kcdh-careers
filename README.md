@@ -57,8 +57,9 @@ Every faculty member or staff member gets their own email + password. **They can
 and edit their own postings.** An admin account sees and edits everyone's.
 
 There is no self-service sign-up and no password-reset email — by design. People ask the
-maintainer, and the maintainer runs one command. All four commands are safe to run while
-the site is live.
+maintainer, and the maintainer runs one command. With shared Redis these commands can run
+while the site is live. For an AWS file deployment, use the locked maintenance procedure
+in [AWS_MIGRATION.md](AWS_MIGRATION.md), avoiding overlapping account writes/backups.
 
 ```bash
 .venv/bin/python server.py users                    # list accounts
@@ -184,6 +185,17 @@ of the Redis `postings` and `users` records; GitHub only backs up code. Deployme
 not reset postings or accounts. Optional `MAINTAINER_EMAIL` overrides the sign-in contact.
 
 ## 5. Routine maintenance
+
+### Later migration to AWS
+
+Follow [AWS_MIGRATION.md](AWS_MIGRATION.md) for server sizing, current Mumbai cost estimates,
+copyable installation steps, Upstash data migration, HTTPS, backups and rollback. Use
+[MANAGER_APPROVAL.md](MANAGER_APPROVAL.md) for the manager request, budget and scoped
+permissions checklist. The initial EC2 plan is 1 GiB RAM, 2 burstable vCPUs and 16 GB disk:
+about $9.20/month before backups/tax, with a suggested $15 pre-tax budget. Recheck pricing
+before migration. These instructions do not change the Vercel deployment.
+
+### Maintenance commands
 
 | Task | Action |
 |---|---|

@@ -29,7 +29,7 @@ Tests use plain Python assertions, without a framework or coverage threshold. Ru
 
 ## Commit & Pull Request Guidelines
 
-The repository currently has one initial commit, so no established commit convention exists yet. Use concise imperative messages, such as `Validate internship deadlines`. PRs should describe the problem, resulting behavior, and validation performed. Link relevant issues and include screenshots for visible UI changes.
+Recent commits use concise imperative messages, such as `Prepare Vercel deployment with shared Upstash storage`. Follow that style. PRs should describe the problem, resulting behavior, and validation performed. Link relevant issues and include screenshots for visible UI changes.
 
 ## Security & Configuration
 

@@ -1,0 +1,4 @@
+# Replace this example hostname with the manager-approved domain.
+careers.example.edu {
+    reverse_proxy 127.0.0.1:8000
+}

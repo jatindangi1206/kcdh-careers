@@ -12,14 +12,17 @@ static/index.html   public listing + search, type, centre and category filters
 static/admin.html   staff sign-in + add/edit/archive/delete
 static/style.css    shared styles
 static/listing.js   shared public card + staff preview renderer
-server.py           the whole backend, plus the account CLI
+server.py           backend, shared-store support, and account CLI
+api/index.py        Vercel function entrypoint
+vercel.json         static pages and API routing
 internships.json    the postings — this is the database
 auth.json           accounts: name + Argon2id password hash (git-ignored, chmod 600)
 test_server.py      backend assertions + HTTP workflow checks
 test_frontend.js    dependency-free rendering + session checks
 ```
 
-Python standard library only, plus `argon2-cffi` for password hashing.
+Python standard library only, plus `argon2-cffi` for password hashing. Local development
+uses JSON files; Vercel uses Upstash Redis through its REST API without another dependency.
 
 ---
 
@@ -77,7 +80,8 @@ Notes:
 - Only the Argon2id **hash** is stored. The password itself exists nowhere — not in
   `auth.json`, not in any HTML or JavaScript, not in the browser. If someone forgets it,
   nobody can look it up; you reset it.
-- Sessions live in memory, so restarting the server signs everyone out. Harmless.
+- Local sessions live in memory, so restarting the local server signs everyone out.
+  Production sessions live in Redis with a 12-hour expiry and survive Vercel restarts.
 
 ---
 
@@ -116,113 +120,83 @@ that contact, for example `MAINTAINER_EMAIL=help@ashoka.edu.in .venv/bin/python 
 
 ---
 
-## 4. Putting it on the internet (AWS)
+## 4. Deploying to Vercel + Upstash
 
-The app is a long-running process that writes to a file on disk, so it needs an ordinary
-Linux machine with an ordinary disk: **EC2 or Lightsail**. Not Lambda, App Runner, Fargate
-or Amplify — those have no persistent filesystem and would silently lose every posting.
+The repository is <https://github.com/jatindangi1206/kcdh-careers>. The Vercel project is
+`kcdh-careers`. `vercel.json` builds the static pages into `public/`, maps `/admin` to the
+staff page, and sends `/api/*` to the existing Python handler. Functions run in Mumbai.
+Only public assets are served statically; account files and environment files are excluded.
 
-A **t4g.micro** (or the $5 Lightsail plan) with the default 8 GB disk is far more than
-enough: the data is a few kilobytes.
+### 4.1 Persistent storage
 
-### 4.1 Instance
+Connect an **Upstash for Redis** database to the Vercel project's Production and Development
+environments. Choose the **Free** plan with **automatic upgrades disabled** and **eviction
+disabled**; keep its region near the function (Mumbai / `bom1`). Marketplace terms must be
+accepted by the account owner before provisioning. Free-plan limits cause errors rather
+than silently upgrading or discarding account/posting data.
 
-- Ubuntu 24.04, arm64.
-- Security group: **443** and **80** open to the world; **22 only from your own IP**.
-- Attach an **Elastic IP** (or Lightsail's static IP) *before* giving DNS the address —
-  a plain EC2 public IP changes on every stop/start and would break the site.
-- Ask Ashoka IT for a subdomain (e.g. `internships.ashoka.edu.in`) pointing at that IP.
-- **Beware `DeleteOnTermination`** — it is on by default. Terminating the instance destroys
-  the disk and every posting with it. *Stopping* is safe; *terminating* is not.
+The backend accepts either integration naming scheme:
 
-### 4.2 Install
+- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`
+- `KV_REST_API_URL` and `KV_REST_API_TOKEN`
 
-```bash
-ssh ubuntu@<elastic-ip>
+`CAREERS_STORE_PREFIX` defaults to `kcdh-careers:`. Postings, accounts, sessions, and
+failed-login counters are all shared in Redis. Atomic compare-and-set prevents one function
+instance from overwriting another instance's update; a conflict asks staff to reload.
+On Vercel, missing storage or an outage returns an error instead of falling back to temporary
+files. HTTPS-only cookies are enabled automatically.
 
-sudo apt update && sudo apt install -y python3-venv git caddy
-sudo mkdir -p /srv/internships && sudo chown ubuntu:ubuntu /srv/internships
-git clone <your-repo-url> /srv/internships    # or: scp -r ./ ubuntu@<ip>:/srv/internships
-cd /srv/internships
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python server.py adduser you@ashoka.edu.in     # admin: yes
-```
+Use a separate database or prefix for Preview if staff need to test changes there. Do not
+connect a preview to the live database inadvertently. With no Preview storage configured,
+static pages work but the API deliberately reports storage not configured.
 
-Create the accounts **on the server**. Never copy your local `auth.json` up; it is
-git-ignored for that reason.
+### 4.2 Production staff accounts
 
-### 4.3 Keep it running — `/etc/systemd/system/internships.service`
-
-```ini
-[Unit]
-Description=Ashoka careers board
-After=network.target
-
-[Service]
-User=ubuntu
-WorkingDirectory=/srv/internships
-Environment=SECURE_COOKIE=1
-ExecStart=/srv/internships/.venv/bin/python server.py
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
+Pull the **Development** environment connected to the same database and run the existing
+account CLI locally against it:
 
 ```bash
-sudo systemctl enable --now internships
-sudo systemctl status internships       # check it is running
-journalctl -u internships -f            # watch the log
+vercel env pull .env.local --environment development
+set -a
+. ./.env.local
+set +a
+.venv/bin/python server.py adduser you@ashoka.edu.in
 ```
 
-`SECURE_COOKIE=1` makes the session cookie HTTPS-only. Set it in production, never locally.
+Choose admin: yes for the maintainer. This creates a new production account; it does not
+upload local `auth.json`. Passwords remain hashed. Use `users`, `passwd`, and `deluser` with
+the same environment for account maintenance. Close this terminal afterwards to return to
+local file storage. Never commit `.env.local` or paste its contents into an issue or chat.
 
-### 4.4 HTTPS — `/etc/caddy/Caddyfile`
+Production starts with an empty board. Staff can create real listings after signing in;
+the example `internships.json` is not automatically published or copied into Redis.
 
-```
-internships.ashoka.edu.in {
-    reverse_proxy 127.0.0.1:8000
-}
-```
+### 4.3 Deploy and maintain
 
 ```bash
-sudo systemctl reload caddy
+.venv/bin/python test_server.py
+node test_frontend.js
+vercel deploy --prod
 ```
 
-Caddy obtains and renews the certificate on its own. The app binds `127.0.0.1`, so it is
-reachable only through Caddy. Caddy also sets `X-Forwarded-For`, which the app reads so the
-failed-login lockout counts real visitors rather than the proxy.
-
-### 4.5 Backups — do not skip
-
-`internships.json` and `auth.json` are the only copies of the data. Create an S3 bucket with
-**versioning on**, attach an IAM instance role that can write to it (no access keys on
-disk), then `sudo crontab -e`:
-
-```cron
-0 2 * * * aws s3 cp /srv/internships/internships.json s3://ashoka-internships-backup/ && aws s3 cp /srv/internships/auth.json s3://ashoka-internships-backup/
-```
-
-Restore is a copy back and `sudo systemctl restart internships`. EBS snapshots are worth
-having too, but versioned S3 is what gives you "last Tuesday's file" in one command.
-
----
+Connect the GitHub repository to Vercel for later automatic deployments. Keep private backups
+of the Redis `postings` and `users` records; GitHub only backs up code. Deployment/restarts do
+not reset postings or accounts. Optional `MAINTAINER_EMAIL` overrides the sign-in contact.
 
 ## 5. Routine maintenance
 
-| Task | Command (on the server, in `/srv/internships`) |
+| Task | Action |
 |---|---|
-| A professor wants an account | `.venv/bin/python server.py adduser <email>` |
-| Someone forgot their password | `.venv/bin/python server.py passwd <email>` |
-| Someone has left Ashoka | `.venv/bin/python server.py deluser <email>` |
-| Who has an account? | `.venv/bin/python server.py users` |
-| Is the site up? | `sudo systemctl status internships` |
-| Something looks wrong | `journalctl -u internships -n 100` |
-| Restart after a config change | `sudo systemctl restart internships` |
-| Deploy new code | `git pull && sudo systemctl restart internships` |
+| Add/reset/remove staff | Load the storage environment and run the account CLI above |
+| View accounts | `.venv/bin/python server.py users` with the storage environment |
+| Deploy code | Push to the connected GitHub repository, or `vercel deploy --prod` |
+| Investigate errors | Check Vercel function logs and the Upstash database's status/limits |
+| Test shared storage | `.venv/bin/python test_shared_store.py` (local `redis-server` / `redis-cli` required) |
 
-Postings are plain JSON — `internships.json` can be edited by hand in an emergency. Stop the
-service first, edit, restart. Keep it valid JSON.
+Local development still uses the JSON files unless storage environment variables are set.
+`DATA_DIR` can point local file storage to another existing directory. Stop the local server
+before editing its JSON files by hand. Production writes must go through the app or account
+CLI; do not overwrite Redis records while staff are editing postings.
 
 ---
 
@@ -233,7 +207,7 @@ service first, edit, restart. Keep it valid JSON.
 | `ModuleNotFoundError: argon2` | Wrong interpreter. Use `.venv/bin/python`, not `python`. |
 | `mach-o ... incompatible architecture` (macOS) | The x86_64 python.org 3.10 build. Rebuild the venv with `/opt/homebrew/bin/python3.13`. |
 | `Port 8000 is already in use` | Another copy is running. `lsof -ti :8000 \| xargs kill`, or `PORT=8001`. |
-| Staff say the site logged them out | The server restarted. Sessions are in memory. They sign in again. |
+| Staff say the site logged them out | The local server restarted or the 12-hour session expired. Sign in again. |
 | A posting vanished from the public page | Its deadline passed, or it was archived. It is still in `/admin`. |
 | "That posting belongs to someone else" | Correct — only the owner or an admin can change it. |
 | Google Form link rejected | They copied the `/edit` URL. Forms → Send → link icon → Copy. |
@@ -243,8 +217,10 @@ service first, edit, restart. Keep it valid JSON.
 
 ## 7. Handing this over
 
-Everything a successor needs: this README, SSH access to the instance, and the AWS account.
-There is no build step, no framework, no database and no CI. `server.py` remains a single module that can be read end to end.
+Everything a successor needs: this README, repository access, Vercel/Upstash access, and
+the database backup location.
+There is no frontend framework or CI; Vercel serves static files and one Python function,
+and Redis holds production state. `server.py` remains a single module that can be read end to end.
 
 Deliberately **not** built, and worth resisting: applications stored in this app, CV uploads,
 applicant email notifications, an approval workflow. Google Forms already does all of that,

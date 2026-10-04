@@ -6,19 +6,22 @@ Users: .venv/bin/python server.py adduser <email> # create a staff account
        .venv/bin/python server.py deluser <email> # remove an account
        .venv/bin/python server.py users            # list accounts
 """
-import http.cookies, json, os, re, secrets, sys, threading, time
+import hashlib, http.cookies, json, os, re, secrets, sys, threading, time
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, unquote
+from urllib.request import Request, urlopen
+from urllib.error import URLError
 
 from argon2 import PasswordHasher
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, "internships.json")
-AUTH = os.path.join(HERE, "auth.json")
+DATA_DIR = os.environ.get("DATA_DIR", HERE)
+DATA = os.path.join(DATA_DIR, "internships.json")
+AUTH = os.path.join(DATA_DIR, "auth.json")
 PORT = int(os.environ.get("PORT", 8000))
-SECURE_COOKIE = os.environ.get("SECURE_COOKIE") == "1"  # set behind HTTPS
+SECURE_COOKIE = os.environ.get("SECURE_COOKIE") == "1" or bool(os.environ.get("VERCEL"))  # set behind HTTPS
 SESSION_HOURS = 12
 
 ph = PasswordHasher()
@@ -30,9 +33,76 @@ FIELDS = ("title", "faculty", "department", "centre", "description", "eligibilit
           "duration", "deadline", "category", "apply_url", "details", "posting_type",
           "application_method", "apply_email", "email_subject", "document_title", "document_url")
 
+# Production state is shared across Vercel function instances, never written to /tmp.
+REDIS_URL = os.environ.get("UPSTASH_REDIS_REST_URL") or os.environ.get("KV_REST_API_URL", "")
+REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN") or os.environ.get("KV_REST_API_TOKEN", "")
+REMOTE = bool(REDIS_URL or REDIS_TOKEN or os.environ.get("VERCEL"))
+PREFIX = os.environ.get("CAREERS_STORE_PREFIX", "kcdh-careers:")
+snapshots = threading.local()
+
+class StoreError(Exception):
+    def __init__(self, message, status=503):
+        super().__init__(message)
+        self.status = status
+
+def redis(*command):
+    if not REDIS_URL or not REDIS_TOKEN:
+        raise StoreError("Staff storage is not configured. Please contact the site maintainer.")
+    request = Request(REDIS_URL, data=json.dumps(command).encode(),
+                      headers={"Authorization": "Bearer " + REDIS_TOKEN, "Content-Type": "application/json"})
+    try:
+        with urlopen(request, timeout=10) as response:
+            result = json.load(response)
+        if "error" in result:
+            raise StoreError("Storage is unavailable. Please try again; your changes were not confirmed.")
+        return result["result"]
+    except (URLError, OSError, ValueError, KeyError):
+        raise StoreError("Storage is unavailable. Please try again; your changes were not confirmed.") from None
+
+def read_shared(key, default):
+    raw = redis("GET", PREFIX + key)
+    if not hasattr(snapshots, "values"):
+        snapshots.values = {}
+    snapshots.values[key] = raw
+    try:
+        return json.loads(raw) if raw is not None else default
+    except ValueError:
+        raise StoreError("Stored data could not be read. Please contact the site maintainer.") from None
+
+def write_shared(key, value):
+    # ponytail: whole-board JSON; use per-posting records if the board grows large.
+    if not hasattr(snapshots, "values"):
+        snapshots.values = {}
+    expected = snapshots.values.get(key)
+    script = """local old = redis.call('GET', KEYS[1])
+        if (old or '') ~= ARGV[1] then return 0 end
+        redis.call('SET', KEYS[1], ARGV[2]); return 1"""
+    raw = json.dumps(value)
+    if redis("EVAL", script, 1, PREFIX + key, expected or "", raw) != 1:
+        raise StoreError("Another update was saved first. Reload the posting and try again.", 409)
+    snapshots.values[key] = raw
+
+def get_session(token):
+    if REMOTE:
+        raw = redis("GET", PREFIX + "session:" + token)
+        return json.loads(raw) if raw else None
+    return sessions.get(token)
+
+def set_session(token, email):
+    value = (email, time.time() + SESSION_HOURS * 3600)
+    if REMOTE:
+        redis("SET", PREFIX + "session:" + token, json.dumps(value), "EX", SESSION_HOURS * 3600)
+    else:
+        sessions[token] = value
+
+def delete_session(token):
+    redis("DEL", PREFIX + "session:" + token) if REMOTE else sessions.pop(token, None)
+
 # ---------- data ----------
 
 def load():
+    if REMOTE:
+        return read_shared("postings", [])
     try:
         with open(DATA) as f:
             return json.load(f)
@@ -40,6 +110,8 @@ def load():
         return []
 
 def save(items):
+    if REMOTE:
+        return write_shared("postings", items)
     tmp = DATA + ".tmp"
     with open(tmp, "w") as f:
         json.dump(items, f, indent=2)
@@ -115,6 +187,8 @@ def clean(body):
 # ---------- accounts ----------
 
 def users():
+    if REMOTE:
+        return read_shared("users", {})
     try:
         with open(AUTH) as f:
             return json.load(f)["users"]
@@ -122,6 +196,8 @@ def users():
         return {}
 
 def save_users(u):
+    if REMOTE:
+        return write_shared("users", u)
     with open(AUTH, "w") as f:
         json.dump({"users": u}, f, indent=2)
     os.chmod(AUTH, 0o600)
@@ -129,24 +205,32 @@ def save_users(u):
 def whoami(handler):
     """The signed-in user's record plus their email, or None."""
     tok = http.cookies.SimpleCookie(handler.headers.get("Cookie", "")).get("sid")
-    s = sessions.get(tok.value) if tok else None
+    s = get_session(tok.value) if tok else None
     if not s or s[1] <= time.time():
         return None
     u = users().get(s[0])
     return dict(u, email=s[0]) if u else None  # account deleted mid-session -> signed out
 
 def check_password(email, pw, ip):
-    n, since = fails.get(ip, (0, 0))
-    if time.time() - since >= 300:
-        n, since = 0, 0
+    key = PREFIX + "fails:" + hashlib.sha256(ip.encode()).hexdigest()
+    if REMOTE:
+        n, since = int(redis("GET", key) or 0), time.time()
+    else:
+        n, since = fails.get(ip, (0, 0))
+        if time.time() - since >= 300:
+            n, since = 0, 0
     if n >= 10 and time.time() - since < 300:
-        return False  # locked out for 5 minutes
-    try:
-        ph.verify(users()[email]["hash"], pw)
-    except Exception:  # unknown email and wrong password fail identically
-        fails[ip] = (n + 1, since or time.time())
         return False
-    fails.pop(ip, None)
+    record = users().get(email)  # storage failures must not be treated as bad passwords
+    try:
+        ph.verify(record["hash"] if record else "", pw)
+    except Exception:
+        if REMOTE:
+            redis("EVAL", "local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('EXPIRE',KEYS[1],300) end; return n", 1, key)
+        else:
+            fails[ip] = (n + 1, since or time.time())
+        return False
+    redis("DEL", key) if REMOTE else fails.pop(ip, None)
     return True
 
 def may_edit(user, item):
@@ -160,6 +244,15 @@ def visible_to(user, items):
 
 STATIC = {"/": "index.html", "/admin": "admin.html", "/style.css": "style.css", "/listing.js": "listing.js"}
 
+def storage_errors(method):
+    # Vercel calls do_* directly, so catch errors at the same boundary locally and remotely.
+    def call(self):
+        try:
+            return method(self)
+        except StoreError as error:
+            self.send(error.status, {"error": str(error)})
+    return call
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "careers"
 
@@ -167,6 +260,7 @@ class Handler(BaseHTTPRequestHandler):
         body = b"" if payload is None else json.dumps(payload).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         if cookie:
             self.send_header("Set-Cookie", cookie)
@@ -187,6 +281,7 @@ class Handler(BaseHTTPRequestHandler):
         fwd = self.headers.get("X-Forwarded-For")
         return fwd.split(",")[0].strip() if fwd else self.client_address[0]
 
+    @storage_errors
     def do_GET(self):
         path = urlparse(self.path).path
         if path in STATIC:
@@ -213,6 +308,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send(404, {"error": "Not found."})
 
+    @storage_errors
     def do_POST(self):
         path = urlparse(self.path).path
         try:
@@ -222,13 +318,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not check_password(email, str(b.get("password", "")), self.client_ip()):
                     return self.send(401, {"error": "Wrong email or password."})
                 tok = secrets.token_urlsafe(32)
-                sessions[tok] = (email, time.time() + SESSION_HOURS * 3600)
+                set_session(tok, email)
                 flags = "; Secure" if SECURE_COOKIE else ""
                 return self.send(200, {"ok": True},
                                  f"sid={tok}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_HOURS*3600}{flags}")
             if path == "/api/logout":
                 tok = http.cookies.SimpleCookie(self.headers.get("Cookie", "")).get("sid")
-                sessions.pop(tok.value, None) if tok else None
+                delete_session(tok.value) if tok else None
                 return self.send(200, {"ok": True}, "sid=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
             if path == "/api/internships":
                 user = whoami(self)
@@ -266,6 +362,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200, result)
         self.send(404, {"error": "No such opportunity."})
 
+    @storage_errors
     def do_PUT(self):
         try:
             patch = clean(self.body())
@@ -273,6 +370,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {"error": str(e)})
         self.edit(lambda item, items: item.update(patch) or item)
 
+    @storage_errors
     def do_DELETE(self):
         self.edit(lambda item, items: items.remove(item) or {"ok": True})
 

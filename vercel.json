@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "mkdir -p public && cp static/* public/",
+  "outputDirectory": "public",
+  "regions": [
+    "bom1"
+  ],
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "{server.py,static/**}",
+      "excludeFiles": "{auth.json,internships.json,.env*,.venv/**,test_*,README.md,AGENTS.md}"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/admin",
+      "destination": "/admin.html"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index"
+    }
+  ],
+  "framework": null
+}

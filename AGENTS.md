@@ -2,11 +2,11 @@
 
 ## Project Structure & Module Organization
 
-This is a Python careers board for jobs and internships with plain HTML, CSS, and JavaScript. `server.py` contains the HTTP server, authentication, posting storage, and account CLI. `static/index.html` renders public listings; `static/admin.html` manages staff postings; `static/style.css` provides shared styles; `static/listing.js` shares card rendering with staff previews. `internships.json` stores postings. `auth.json` stores accounts and password hashes and must remain untracked. `test_server.py` and `test_frontend.js` contain runnable checks. `README.md` documents operation and deployment.
+Python careers board for jobs and internships, using plain HTML/CSS/JavaScript. `server.py` contains the HTTP server, authentication, posting storage, and account CLI. `static/index.html` renders public listings; `static/admin.html` manages staff postings; `static/style.css` provides shared styles; `static/listing.js` shares card rendering with staff previews. `internships.json` stores local postings; Upstash Redis stores production state. `auth.json` stores local accounts and hashes and must remain untracked. `test_server.py`, `test_frontend.js`, and `test_shared_store.py` contain checks. `README.md` documents operation and deployment.
 
 ## Build, Test, and Development Commands
 
-There is no build step. On the documented macOS setup:
+Local development has no build step. On macOS:
 
 ```bash
 /opt/homebrew/bin/python3.13 -m venv .venv
@@ -25,7 +25,7 @@ Match existing formatting: four-space Python indentation and two-space HTML, CSS
 
 ## Testing Guidelines
 
-Tests use plain Python assertions, without a framework or coverage threshold. Run `.venv/bin/python test_server.py`; success prints `ok`. Extend these checks for changes to validation, visibility, ownership, persistence, or authentication. Use temporary files rather than live data. Frontend logic checks use Node.js built-ins; no browser or packages are needed. For interface changes, manually check public filters and staff workflows, including owner restrictions.
+Tests use plain Python assertions, without a framework or coverage threshold. Run `.venv/bin/python test_server.py`; success prints `ok`. Extend checks for validation, visibility, ownership, persistence, or authentication. Shared-store checks require local Redis. Use temporary files rather than live data. Frontend checks use Node.js built-ins. For interface changes, manually check public filters and staff workflows, including owner restrictions.
 
 ## Commit & Pull Request Guidelines
 
@@ -33,4 +33,4 @@ The repository currently has one initial commit, so no established commit conven
 
 ## Security & Configuration
 
-Never commit credentials, `auth.json`, or `.venv/`. Preserve ownership checks, password hashing, and cookie protections. Set `SECURE_COOKIE=1` behind production HTTPS; `MAINTAINER_EMAIL` overrides the contact link. Posting writes must retain locking and atomic replacement. Stop the server before manually editing posting data, and back up both JSON files before maintenance.
+Never commit credentials, `auth.json`, `.env*`, or `.venv/`. Preserve ownership checks, password hashing, and cookie protections. Set `SECURE_COOKIE=1` behind production HTTPS; `MAINTAINER_EMAIL` overrides the contact link. `api/index.py` and `vercel.json` deploy the existing handler to Vercel. Local writes retain locking/atomic replacement; Redis writes retain compare-and-set. Stop the local server before editing its JSON. Back up production Redis records before maintenance.

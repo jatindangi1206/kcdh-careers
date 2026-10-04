@@ -1,0 +1,6 @@
+auth.json
+.env*
+.venv/
+.git/
+__pycache__/
+public/

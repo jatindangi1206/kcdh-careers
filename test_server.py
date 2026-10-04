@@ -137,4 +137,11 @@ try:
     assert request("PUT", path, base, cookie)[0] == 401
 finally:
     httpd.shutdown(); httpd.server_close(); thread.join()
+# Production uses separate disk data, never the tracked sample file.
+import subprocess, sys
+with tempfile.TemporaryDirectory() as data_dir:
+    subprocess.run([sys.executable, "-c", "import server; server.save([{'id': 'disk-check'}]); assert server.load()[0]['id'] == 'disk-check'"],
+                   env=dict(os.environ, DATA_DIR=data_dir), check=True)
+    with open(os.path.join(data_dir, "internships.json")) as f:
+        assert json.load(f) == [{"id": "disk-check"}]
 print("ok")

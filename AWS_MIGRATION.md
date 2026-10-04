@@ -1,317 +1,155 @@
-# AWS Migration Runbook
+# AWS Migration: Free-First Plan
 
-Use this when the manager approves moving Ashoka Careers from Vercel + Upstash to AWS.
-This is a future deployment plan; adding this document does not create AWS resources.
-Send [MANAGER_APPROVAL.md](MANAGER_APPROVAL.md) first. Publish this guide and `deploy/aws/`
-templates in the approved Git release before cloning it below. Record the approved account, domain,
-instance ID, backup bucket, cost centre, and release commit in the team's private handover.
+For rare visits and occasional staff edits, use static hosting and a backend that runs only
+when requested. **Target $0/month; expect $0–$1/month** if tiny storage/request/log charges
+are not covered. This is a conditional estimate, not a guaranteed bill or spending cap.
+The previous EC2 proposal is now an [optional paid fallback](AWS_EC2_RUNBOOK.md).
 
-## 1. Size and architecture
+The public interface is static, but staff login, publishing and private accounts still need
+a backend and durable storage. Static hosting alone would remove those working features.
 
-Start with **one EC2 `t4g.micro`: 2 burstable vCPUs, 1 GiB RAM, 16 GB encrypted gp3 disk**
-in Mumbai (`ap-south-1`), running Ubuntu Server 24.04 LTS **ARM64**, without Ubuntu Pro.
-This is an initial low-traffic sizing recommendation, not a measured capacity guarantee.
-Avoid 512 MB: the OS, HTTPS proxy, and concurrent Argon2 password checks need headroom.
+## Recommended starting setup
+
+Keep the app's existing **Upstash Free storage** and move hosting/API execution to AWS:
 
 ```text
-Visitor / staff → approved domain → Elastic IP → Caddy HTTPS :443
-                                               → Python 127.0.0.1:8000
-                                               → /var/lib/kcdh-careers/*.json
-                                               → private S3 daily backup
+Browser → CloudFront Free + HTTPS
+          ├─ public/staff pages → private S3 assets bucket
+          └─ /api/* → on-demand Lambda Function URL → Upstash Free
+                                                      postings/accounts/sessions
 ```
 
-- Code lives in `/srv/kcdh-careers`; data lives outside Git in `/var/lib/kcdh-careers`.
-- Run **one Python process on one server**. File storage is not a shared database for an
-  autoscaling group or multiple workers. Staff sessions reset on restart.
-- The app stores job/internship descriptions, application/document URLs, and staff names,
-  emails and password hashes. It does not receive CVs, files, or applications. Forms and
-  documents remain with their external providers.
-- Example estimate: 1,000 postings averaging 5 KB require about 5 MB; 16 GB mainly allows
-  room for Linux, dependencies and bounded logs. This estimate is not a posting limit.
-- No RDS, managed Redis, load balancer, NAT gateway, containers, or paid SSL certificate is
-  required for this single-server plan. If institutional policy requires those, reprice it.
+This preserves the existing storage integration and account CLI. If the manager requires
+all data to remain in AWS, use **DynamoDB Standard provisioned capacity** instead; that
+requires a new storage adapter. Select one storage option rather than building both.
 
-Choose **Standard CPU credit mode explicitly**. T4g normally defaults to Unlimited.
-Standard avoids surplus-credit bills, but throttles after credits run out; the micro has a
-10% baseline per vCPU. Check CPU credits, RAM, disk and response times after launch and
-before a recruitment announcement. Resize if sustained load or memory pressure warrants it.
-See [AWS CPU credit documentation](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-credits-baseline-concepts.html).
+**Implementation status:** the repository supports local JSON and Vercel + Upstash today.
+It does not yet have a Lambda event adapter or AWS serverless deployment configuration.
+This is the revised cost/deployment plan, not a claim that the current app can deploy to
+Lambda unchanged. No AWS resources were created. EC2 service/backup templates apply only
+to the paid VM fallback.
 
-## 2. Monthly cost to approve
+## Costs and free allowances
 
-Public Mumbai rates checked **4 October 2026**; Linux On-Demand, 730 hours/month, USD,
-before taxes, currency conversion, discounts and credits. These are new-resource estimates,
-not the account's actual bill; Cost Explorer access was denied during the account check.
+Limits checked **4 October 2026**. Other projects may already consume shared allowances;
+the manager must confirm eligibility, billing scope and available usage before approval.
 
-| Item | Calculation | Monthly estimate |
+| Component | Starting choice | Expected incremental monthly cost |
 |---|---|---:|
-| EC2 t4g.micro compute | $0.0056/hour × 730 | $4.09 |
-| Encrypted gp3 disk, default IOPS/throughput | 16 GB × $0.0912/GB-month | $1.46 |
-| One Elastic/public IPv4 address | $0.005/hour × 730 | $3.65 |
-| **Server + disk + IP** | | **$9.20** |
-| Daily small S3 data backups and requests | Planning allowance, not a fixed service price | $1.00 |
-| DNS using an existing university zone | No new zone; provider/query costs may apply | Confirm |
-| New Route 53 zone, only if needed | $0.50/month, plus queries | $0.50 + usage |
-| HTTPS certificate | Caddy automatic HTTPS | $0 |
+| Frontend/CDN | CloudFront **flat-rate Free** subscription | $0 |
+| CPU/RAM | On-demand Lambda, initially 256 MB per invocation | $0 within remaining free usage |
+| HTTPS API endpoint | Lambda Function URL; no API Gateway | No separate endpoint fee |
+| Existing storage | Upstash Free, upgrades and eviction disabled | $0 within plan limits |
+| Assets/private backups | Small S3 buckets/prefixes | Pennies possible for requests/versions |
+| DNS/HTTPS | Supplied CloudFront hostname or approved existing subdomain | Confirm DNS costs; no new domain purchase |
+| Lambda logs | Minimal logs, short retention | Free allowance if available; otherwise usage charges |
 
-**Request a $15/month pre-tax operating budget** for low traffic with existing DNS and
-small backups. It is a planning allowance, not a spending cap. Budget alerts at $10 and $15
-should go to the manager and maintainer. Ask the manager to confirm taxes, exchange rate,
-network charges, monitoring charges and account-level discounts before approval.
+CloudFront Free includes **1 million requests/month, 100 GB transfer and 5 GB S3 Standard
+storage credits**. Its no-overage protection applies to that subscription, not to Lambda,
+S3 requests, database operations or unrelated services.
+[CloudFront pricing](https://aws.amazon.com/cloudfront/pricing/),
+[plan eligibility and inclusions](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/flat-rate-pricing-plan.html).
 
-AWS offers 100 GB/month internet egress aggregated across eligible services/regions; the
-existing account may already use it. Traffic above available allowance costs extra. Optional
-EBS snapshots are **$0.05 per GB-month stored** in Mumbai, with changing blocks/retention
-affecting the total; they are not included above. Paid CloudWatch alarms/log ingestion,
-custom KMS keys, domain purchase, WAF and support plans also need separate approval.
-Stopping EC2 stops compute billing, but retained disks, snapshots and allocated IPs still cost.
+Lambda includes **1 million requests and 400,000 GB-seconds/month**. CPU scales with memory;
+there is no 24/7 CPU reservation. Start without provisioned concurrency, SnapStart or VPC/NAT
+attachment. Accept cold starts, and measure login memory/latency at 256 MB; increase to
+512 MB only if testing justifies it.
+[Lambda pricing](https://aws.amazon.com/lambda/pricing/),
+[Function URL costs](https://aws.amazon.com/about-aws/whats-new/2022/04/aws-lambda-function-urls-built-in-https-endpoints/).
 
-Sources: [official Mumbai EC2/EBS rate catalogue](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/ap-south-1/index.csv),
-[IPv4 pricing](https://aws.amazon.com/vpc/pricing/),
-[EC2 transfer and CPU pricing](https://aws.amazon.com/ec2/pricing/on-demand/),
-[S3 pricing](https://aws.amazon.com/s3/pricing/), and
-[Route 53 pricing](https://aws.amazon.com/route53/pricing/).
-Recheck rates in the [AWS calculator](https://calculator.aws/) before deploying later.
+Upstash Free includes **256 MB, 500,000 commands/month and 10 GB bandwidth/month**.
+An API operation may use several Redis commands. Keep private backups and confirm the
+selected integration plan. [Upstash pricing](https://upstash.com/pricing/redis).
 
-### Simpler billing alternative
+The all-AWS alternative has a published DynamoDB allowance of **25 RCUs, 25 WCUs and
+25 GB**, per Region/payer account, for Standard **provisioned** tables. Start with one small
+table, e.g. 5 RCUs/5 WCUs, only if unused allowance is available. On-demand capacity does
+not receive those provisioned units. Use separate posting records to avoid the 400 KB
+per-item ceiling; preserve conditional writes, ownership checks and session expiry.
+[DynamoDB pricing](https://aws.amazon.com/dynamodb/pricing/),
+[item limits](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Constraints.html).
 
-If the manager prefers Lightsail, its **$7/month Linux public-IPv4 bundle** provides 1 GB
-RAM, 2 vCPUs, 40 GB SSD and **1 TB transfer in Mumbai** (half the advertised 2 TB).
-The bundle includes DNS management and an attached static IP; snapshots and transfer
-overages are extra. Allow approximately **$8–10/month before tax** with small backups.
-Do not add EC2 disk/IP charges to this bundle. The Linux application steps below still
-apply, but Lightsail networking, access and backup setup must replace the EC2-specific steps.
-EC2 is the documented default because it fits the existing account's EC2/IAM operations.
-[Official Lightsail pricing](https://aws.amazon.com/lightsail/pricing/).
+### Example at low traffic
 
-## 3. Manager provisions the infrastructure
+Assume 1,000 visits/month, six asset requests and two API requests per visit, plus 100
+staff/maintenance API requests: approximately 6,000 asset requests and 2,100 API requests.
+At 256 MB and one second average execution, that is about **525 GB-seconds**. These are
+planning assumptions, not measured traffic or latency; login/cold starts may take longer.
 
-After written approval, ask the manager to:
+For data, 100 postings averaging 5 KB need about **0.5 MB**; 1,000 need about **5 MB**,
+plus accounts and transient sessions. Documents/CVs remain external. No 16 GB app data
+volume or large database allocation is needed. Watch actual commands, bandwidth, duration,
+memory and errors after launch before scaling.
 
-1. Launch the instance above in an approved **public subnet**, with a route through an
-   internet gateway, Standard credits, encrypted root disk, IMDSv2 required, and tags
-   `Project=kcdh-careers`, `Owner=<maintainer>`, `Environment=production` and cost centre.
-   Confirm root-volume deletion policy and backups before eventual termination.
-2. Associate one Elastic IP. Allow TCP 80/443 publicly. Allow SSH 22 only from an approved
-   administrator IP/VPN, or use approved SSM access. Never expose port 8000 or open SSH
-   to everyone. No new NAT gateway is needed for this public-subnet design.
-3. Supply OS administration access, GitHub access to an approved release, and a staging
-   hostname for HTTPS checks. Retain DNS control or delegate only the required records.
-4. Create a private S3 backup bucket/prefix in Mumbai: block all public access, default
-   SSE-S3 encryption, versioning and a lifecycle retaining daily archives for 30 days.
-   Include noncurrent-version expiry and expired-delete-marker cleanup. Legal retention
-   requirements take precedence over this suggested 30-day policy.
-5. Attach an instance role limited to writing that backup prefix; give restore read access
-   only to approved operators. Do not put IAM access keys on disk. Install AWS CLI v2 for
-   the instance architecture using [AWS installation instructions](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
-6. Configure budget alerts and agree who handles patches, backup failures and downtime.
-   Enable SSM only with the manager-approved instance role/connectivity if that is the
-   account's access standard. Do not modify existing research instances or security groups.
+## Is this account eligible for $0?
 
-## 4. Install the application on Ubuntu
+**Possibly, but not verified.** The read-only `freetier:GetFreeTierUsage` request was denied,
+as was the previous Cost Explorer check. Existing EC2 instances do not establish account
+age, remaining credits, available recurring allowances or CloudFront subscription eligibility.
+The manager should check Billing → Free Tier and the CloudFront plan selector.
 
-Run these commands **on the new server**, with sudo access. They intentionally do not copy
-your Mac virtual environment, local accounts or example postings.
+Recurring service allowances differ from introductory credits. The new-customer Free
+account plan ends after six months or exhausted credits; legacy EC2 introductory benefits
+also expire. Creating another account is not the long-term hosting plan.
+[AWS account plans](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/free-tier-plans.html),
+[legacy and recurring offers](https://repost.aws/knowledge-center/aws-free-tier-account-start-expire).
 
-```bash
-sudo apt-get update
-sudo apt-get install -y python3 python3-venv git caddy curl cron
-sudo adduser --system --group --home /var/lib/kcdh-careers careers
-sudo install -d -o careers -g careers -m 700 /var/lib/kcdh-careers
-sudo git clone https://github.com/jatindangi1206/kcdh-careers.git /srv/kcdh-careers
-cd /srv/kcdh-careers
-git rev-parse HEAD                         # compare with the approved release
-sudo python3 -m venv .venv
-sudo .venv/bin/pip install -r requirements.txt
-sudo .venv/bin/python test_server.py        # temporary data, not production
-```
+If CloudFront flat-rate Free is unavailable, price pay-as-you-go CloudFront against remaining
+account allowances first; do not silently select a paid subscription. Start with the supplied
+hostname. A new domain or unrelated DNS zone can introduce fixed charges.
 
-Keep code/venv owned by the administrator; the `careers` service user needs read access
-there and write access only to its data directory. If the release is a specific commit,
-have the manager check it out before installation. For Caddy package alternatives, see
-[official installation instructions](https://caddyserver.com/docs/install).
+## Approval and deployment sequence
 
-Create `/etc/kcdh-careers.env` using `sudoedit`, mode 600, with:
+Send [MANAGER_APPROVAL.md](MANAGER_APPROVAL.md). Target $0 with a **$1 notification/review
+threshold**, using existing billing monitoring. Alerts are not hard caps. Any paid plan or
+material recurring fee needs a revised, specific approval before provisioning.
 
-```ini
-DATA_DIR=/var/lib/kcdh-careers
-SECURE_COOKIE=1
-PORT=8000
-MAINTAINER_EMAIL=REPLACE_WITH_APPROVED_CONTACT
-```
+1. **Confirm free choices.** Record account/region, unused allowances, approved storage,
+   operator role, hostname and retention. Retain Upstash only with external-provider approval;
+   its account owner must accept marketplace terms if provisioning is still pending.
+2. **Implement and test Lambda support.** Adapt the existing HTTP handler to Function URL
+   events/responses and package Linux-compatible Argon2 dependencies. Preserve validation,
+   error handling, HTTPS cookies and owner restrictions. Keep sessions and failed-login
+   counters in shared storage; Lambda memory and `/tmp` are not durable. For DynamoDB,
+   implement/test the storage adapter and account/export commands before migrating data.
+3. **Deploy assets and API.** Upload only `static/` assets to a private S3 origin; never
+   publish `auth.json`, `.env*` or exports. Create one on-demand Lambda in Mumbai. Measure
+   at 256 MB and use a small approved reserved-concurrency value, e.g. two. Reserved
+   concurrency limits simultaneous execution, not monthly spend. No EC2/EBS/Elastic IP,
+   RDS, load balancer or NAT gateway is requested.
+4. **Configure CloudFront.** Use S3 for assets and `/api/*` for the Lambda origin. Map `/`
+   to `index.html` and `/admin` to `admin.html`. Use managed policies supported by Free;
+   disable API caching and forward required cookies/query strings. Protect both origins
+   with origin access control, limiting Lambda invocation to the distribution. Lambda OAC
+   requires a SHA-256 body header for POST/PUT; implement this in the frontend request
+   helper and verify login and edits through CloudFront.
+   [Lambda-origin OAC instructions](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda.html).
+5. **Preserve data/backups.** Verify the production Upstash environment/prefix; isolate
+   previews. If changing stores, freeze staff/account changes and privately export/import
+   postings and hashes, preserving IDs/ownership. Expire old sessions. Save a private export
+   after changes or at least weekly while activity is rare; agree retention and test a restore.
+   Start with an approved operator export process; automate when activity warrants it.
+   The EC2 backup shell script cannot be used on Lambda.
+6. **Verify and cut over.** Check public filters, expanded details, form/email/document links,
+   job/internship publishing, login/logout, owner limits, archive/delete and persistence across
+   Lambda replacements. Confirm private paths return 404, real quotas/costs and HTTPS;
+   then update DNS. Retain old hosting for rollback. If stores differ, never allow both
+   deployments to accept staff edits, and reconcile new writes before switching back.
 
-Replace the contact. **Do not copy `.env.local`.** Omit `VERCEL`,
-`UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `KV_REST_API_URL` and
-`KV_REST_API_TOKEN`: any of those selects Redis rather than AWS file storage.
+Assign owners for account resets, dependency updates, backups, costs and incidents.
+Free-tier limits and cold starts are acceptable starting compromises; security and data
+preservation remain required.
 
-## 5. Prepare data: choose exactly one path
+## Other low-cost options
 
-### A. No live production data yet
-
-Initialize empty postings and create a new production maintainer account:
-
-```bash
-sudo -u careers sh -c 'umask 077; printf "[]\n" > /var/lib/kcdh-careers/internships.json'
-cd /srv/kcdh-careers
-sudo -u careers env DATA_DIR=/var/lib/kcdh-careers .venv/bin/python server.py adduser you@ashoka.edu.in
-```
-
-Replace the email; choose admin: yes. Do not run the initialization over existing data.
-The checked-in examples and local `auth.json` are not production data.
-
-### B. Production Vercel + Upstash already contains data
-
-Agree a staff editing freeze, including account CLI changes. Keep it in effect until
-cutover is verified. Load the **live database's** environment locally as described in the
-main README; confirm the database and `CAREERS_STORE_PREFIX` before exporting. Never
-export a Preview database by mistake. From the local repository:
-
-```bash
-.venv/bin/python - <<'PY'
-import json, os
-from pathlib import Path
-import server
-
-assert server.REMOTE and server.REDIS_URL and server.REDIS_TOKEN, 'Load the live Upstash environment first'
-posts, accounts = server.redis('MGET', server.PREFIX + 'postings', server.PREFIX + 'users')
-assert accounts is not None, 'No live accounts found; verify database/prefix'
-posts = json.loads(posts) if posts is not None else []
-accounts = json.loads(accounts)
-assert isinstance(posts, list) and isinstance(accounts, dict)
-out = Path.home() / 'kcdh-aws-export'
-out.mkdir(mode=0o700)  # fails if it already exists; protects a previous export
-for name, value in [('internships.json', posts), ('auth.json', {'users': accounts})]:
-    with os.fdopen(os.open(out / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as f:
-        json.dump(value, f, indent=2)
-print('Private export saved; postings:', len(posts), 'accounts:', len(accounts))
-PY
-```
-
-Transfer these two private files using the approved SSH/SCP or private S3 channel. On the
-server, install them from that private staging directory (replace the source paths):
-
-```bash
-sudo install -o careers -g careers -m 600 /PRIVATE/STAGING/internships.json /var/lib/kcdh-careers/internships.json
-sudo install -o careers -g careers -m 600 /PRIVATE/STAGING/auth.json /var/lib/kcdh-careers/auth.json
-```
-
-Preserve record IDs, ownership and password hashes. Do not import sessions or login-failure
-counters; staff sign in again. Keep the export private and remove transfer copies after
-verified backup/restore. Export again at final cutover if staff were allowed to edit after a
-rehearsal. Never let both AWS and Vercel accept staff writes during transition.
-
-## 6. Start the service and HTTPS
-
-```bash
-cd /srv/kcdh-careers
-sudo chmod 600 /etc/kcdh-careers.env
-sudo install -m 644 deploy/aws/kcdh-careers.service /etc/systemd/system/kcdh-careers.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now kcdh-careers
-curl --fail http://127.0.0.1:8000/api/internships
-```
-
-Have the manager point the staging hostname's DNS A record to the Elastic IP. Remove any
-conflicting AAAA record unless IPv6 is configured. Edit `deploy/aws/Caddyfile` to that hostname,
-then install it below **only on this new dedicated server**. On a shared proxy, the manager
-must merge the site block rather than replace an existing configuration.
-
-```bash
-sudo install -m 644 deploy/aws/Caddyfile /etc/caddy/Caddyfile
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl enable --now caddy
-sudo systemctl reload caddy
-```
-
-Caddy obtains/renews HTTPS once public DNS and ports 80/443 work. TLS terminates at Caddy;
-Python remains private on localhost. Staff login must be tested through **HTTPS** because
-the session cookie is Secure. See [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https).
-
-## 7. Backups before going live
-
-The supplied `deploy/aws/backup.sh` briefly stops Python to archive consistent JSON files,
-restarts it **before** uploading, and records the release commit. Restart signs staff out.
-Schedule outside staff hours; account maintenance must not overlap the backup lock.
-
-Create root-only `/etc/kcdh-careers-backup.env` (mode 600), replacing the bucket:
-
-```ini
-BACKUP_S3_URI=s3://APPROVED_PRIVATE_BUCKET/kcdh-careers
-AWS_DEFAULT_REGION=ap-south-1
-```
-
-```bash
-sudo install -m 700 /srv/kcdh-careers/deploy/aws/backup.sh /usr/local/sbin/kcdh-careers-backup
-sudo /usr/local/sbin/kcdh-careers-backup       # verify successful upload now
-```
-
-Have the manager confirm the role's prefix-only upload permission and bucket encryption.
-Create `/etc/cron.d/kcdh-careers-backup` mode 644 with a final newline:
-
-```cron
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-0 20 * * * root /usr/local/sbin/kcdh-careers-backup >> /var/log/kcdh-careers-backup.log 2>&1
-```
-
-This runs at **20:00 UTC / 01:30 IST** if the server uses UTC; confirm with `timedatectl`.
-Ensure cron is enabled. Add weekly rotation (four compressed copies) for that backup log
-and cap journald disk usage, e.g. `SystemMaxUse=100M`, through the manager's logging policy.
-Check daily that a new S3 archive exists and arrange a failure alert using existing monitoring.
-The script is a backup mechanism, not an alerting service. S3 lifecycle limits retention.
-
-Local template check: `.venv/bin/python test_aws_backup.py` simulates service/S3 success,
-upload failure and invalid data; it does not access AWS or stop a real service. Run the
-actual upload and restore drill above on the approved server as well.
-
-**Restore drill:** with the operator's S3 read permission, download an archive privately,
-extract it to a mode-700 directory, validate both JSON files, and restore to a spare server
-using step 5's `install` commands. Verify accounts, ownership and postings through HTTPS.
-Record how long rebuilding took; only then agree recovery targets. Target daily backups
-(up to 24 hours' data loss) and a 1–2 hour restore are goals, not guaranteed SLAs.
-
-## 8. Cutover checklist and rollback
-
-- [ ] Check public search/type filters, expanded details, documents, form links and email links.
-- [ ] Check staff login, job/internship publishing, editing, archive, deletion and owner limits.
-- [ ] Check logout and failed-login handling; `/auth.json`, `/.env` and `/server.py` return 404.
-- [ ] Restart Python and verify postings/accounts remain; staff will need to sign in again.
-- [ ] Confirm no public port 8000, valid HTTPS, successful backup and a tested restore.
-- [ ] Lower the production DNS TTL ahead of migration, e.g. 300 seconds; agree a change window.
-- [ ] Freeze old staff writes, take the final export, install it while AWS Python is stopped,
-      restart, add the production hostname to Caddy, and update DNS. Keep the old service
-      available for public reads during propagation; prevent staff edits there.
-- [ ] Verify the production hostname and then release the staff freeze **on AWS only**.
-
-Before AWS accepts new writes, rollback can restore the previous DNS/proxy destination.
-After AWS has new postings/account changes, freeze writes again and reconcile/copy the
-latest AWS data into the old store before rollback; changing DNS alone would lose updates.
-Keep Vercel/Upstash and the migration export until the manager accepts the deployment and
-restore drill. Retire old resources later by explicit agreement, including their secrets.
-
-## 9. Maintenance and handover
-
-View status/logs with `sudo systemctl status kcdh-careers` and
-`sudo journalctl -u kcdh-careers --since today`. Review Caddy and backup logs separately.
-Patch Ubuntu/dependencies in an agreed window and verify backups before every release.
-
-For account changes or a release, first take a backup, then open this maintenance shell.
-Its lock prevents overlapping backups; exit it when finished:
-
-```bash
-sudo flock /run/lock/kcdh-careers-maintenance.lock bash
-trap 'systemctl start kcdh-careers' EXIT
-systemctl stop kcdh-careers
-cd /srv/kcdh-careers
-sudo -u careers env DATA_DIR=/var/lib/kcdh-careers .venv/bin/python server.py users
-# Account change: replace "users" with adduser/passwd/deluser and the staff email.
-# Code update: git fetch origin, check out the approved commit, reinstall requirements.
-# Run .venv/bin/python test_server.py before starting an updated release.
-exit
-```
-
-Never run two account writers, overwrite live JSON, or copy production data into Git.
-Retain the previous release commit for code rollback, keeping current data and a backup.
-Assign named owners for staff password resets, Linux patches, DNS, costs and restore drills.
-Memory/disk usage requires OS monitoring; basic EC2 metrics do not include those by default.
-Ask for more capacity if measurements justify it; multiple app instances require shared
-storage and a new deployment plan.
+- **Existing approved university server:** potentially $0 incremental AWS resource cost
+  if the manager confirms spare capacity and permits this app there. Do not assume a
+  research/bastion server is available; shared hosting still needs backups and maintenance.
+- **Vercel + Upstash:** requires the fewest code changes, but Vercel Hobby is restricted to
+  non-commercial personal use. Do not promise that an official recruitment site qualifies;
+  obtain confirmation or an approved institutional plan.
+  [Vercel fair-use policy](https://vercel.com/docs/limits/fair-use-guidelines).
+- **GitHub Pages/static hosting alone:** cannot run this Python staff backend. Keep the
+  serverless API/storage if preserving staff login and publishing.
+- **EC2/Lightsail trials:** temporary credits are useful for testing, not a permanent $0
+  assumption. The [VM runbook](AWS_EC2_RUNBOOK.md) remains available if the manager chooses it.

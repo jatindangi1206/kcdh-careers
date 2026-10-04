@@ -1,117 +1,115 @@
-# AWS Deployment Approval Request
+# AWS Deployment Approval Request — Free-First
 
-Copy/adapt the message below for the AWS manager. Fill in the proposed domain, owners and
-cost centre before sending. This file is a draft; no message or deployment has been sent.
+Fill in the account, owners and domain before sending. This is a draft; no message has
+been sent and no AWS resources have been provisioned.
 
 ## Message to send
 
-**Subject: Approval for Ashoka Careers on AWS — approximately $10–11/month, $15 budget**
+**Subject: Approval for free-tier Ashoka Careers hosting — target $0/month**
 
-I would like approval to host the Ashoka Careers website for **jobs and internships** in
-our AWS account. Staff will create/manage listings; applicants follow a staff-provided form
-or website link, or open an email application with a preset subject. Supporting documents
-remain hosted externally. The site will not collect applications, CVs or document uploads.
+I would like to host the Ashoka Careers jobs/internships page using free-tier/serverless
+services. Visits and staff edits will be infrequent, so I propose avoiding a new always-on
+server. Staff will keep their login and listing editor. Applicants follow form/website links
+or apply by email; the app will not collect applications, CVs or uploaded files.
 
-The proposed setup is a small dedicated server in Mumbai, with HTTPS and private daily
-backups. It stores public listings and staff names, email addresses and Argon2 password
-hashes. Access/security logs may contain visitor IP addresses. We need approval for that
-data, its retention, public access and the external application/document providers.
+The proposed setup is static pages on private S3 behind CloudFront Free, with a small
+on-demand Lambda API. We can retain the existing Upstash Free integration for postings,
+staff names/emails/password hashes, sessions and login-failure counters. If external
+storage is not approved, we can use DynamoDB provisioned free capacity instead; that
+requires an additional storage-adapter change.
 
-### Resources and estimated costs
+### Costs and resources
 
-| Resource | Requested specification | Monthly USD, before tax |
+| Resource | Starting choice | Expected incremental monthly cost |
 |---|---|---:|
-| Compute | One On-Demand Linux t4g.micro, 2 burstable vCPUs, 1 GiB RAM; Standard credits | $4.09 |
-| Disk | 16 GB encrypted gp3, default performance | $1.46 |
-| Public address | One Elastic IPv4 address | $3.65 |
-| Data backups | Private Mumbai S3 prefix, daily archive, 30-day retention | Allow $1.00 |
-| DNS | Subdomain in our existing zone | Confirm existing provider/query fees |
-| HTTPS | Caddy automatic certificate renewal | $0 |
-| **Base plus backup allowance** | **730-hour month; existing DNS** | **$10.20** |
+| CloudFront | Flat-rate Free subscription | $0 |
+| Lambda / Function URL | On-demand, initially 256 MB, small concurrency limit | $0 within available allowance |
+| Storage | Upstash Free; alternatively DynamoDB Standard provisioned | $0 within available allowance |
+| S3 | Small private assets and backup storage | Pennies possible for requests/versions |
+| Domain / HTTPS | Supplied hostname, then an approved existing subdomain | Confirm DNS costs; no domain purchase |
+| Logs / alerts | Short retention and existing monitoring | Confirm remaining allowances/charges |
 
-Please approve a **$15/month pre-tax planning budget**, with $10/$15 alerts sent to us.
-This is not a hard spending limit. If a new Route 53 hosted zone is required, allow another
-$0.50/month plus queries. Traffic, paid monitoring, additional snapshots, taxes and currency
-conversion can increase the bill; please confirm how they apply to our account. Pricing
-was checked on 4 October 2026 and must be refreshed before deployment. No Free Tier,
-promotional credits or organisation discounts are assumed.
+**Target $0/month; expected $0–$1/month at low usage.** Please confirm remaining service
+allowances, account eligibility and billing scope. This is a conditional estimate, not a hard
+spending cap. Use a **$1 notification/review threshold** in the existing billing setup. There
+should be no automatic paid upgrades. Any required paid service/plan will need specific
+approval before provisioning.
 
-Rates: [Mumbai compute/storage catalogue](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/ap-south-1/index.csv),
-[public IPv4](https://aws.amazon.com/vpc/pricing/),
-[DNS](https://aws.amazon.com/route53/pricing/) and [S3](https://aws.amazon.com/s3/pricing/).
+This replaces the earlier $15 EC2 starting proposal. No new EC2 instance, EBS disk,
+Elastic IP, NAT gateway, RDS instance or load balancer is requested. Limits were checked
+on 4 October 2026 and should be refreshed at deployment:
+[CloudFront](https://aws.amazon.com/cloudfront/pricing/),
+[Lambda](https://aws.amazon.com/lambda/pricing/),
+[Upstash](https://upstash.com/pricing/redis),
+[DynamoDB](https://aws.amazon.com/dynamodb/pricing/) and
+[CloudFront eligibility](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/flat-rate-pricing-plan.html).
 
-If you prefer simpler bundled billing, the alternative is **Lightsail's $7/month Linux
-public-IPv4 plan** (1 GB RAM, 40 GB disk, 1 TB Mumbai transfer), plus backups/overages.
-We should select one hosting option. [Lightsail pricing](https://aws.amazon.com/lightsail/pricing/).
+### What I need confirmed
 
-### Decisions and approvals I need
+- Approved account/region, project tags/cost centre, remaining free allowances and whether
+  CloudFront Free is selectable. My `freetier:GetFreeTierUsage` and Cost Explorer reads
+  were denied, so I could not verify the actual available allowance or bill.
+- Approval for one CloudFront Free distribution, small private S3 storage, one Lambda/URL
+  and its limited execution role, plus public HTTPS delivery. You can provision them rather
+  than grant account-wide administrator access.
+- Whether Upstash Free is approved for the staff data above. Otherwise approve one small
+  DynamoDB Standard provisioned table and confirm unused capacity/storage allowance.
+  Do not select DynamoDB On-Demand by default.
+- Production/staging hostname, DNS/certificate owner and charges. We can start with the
+  supplied CloudFront hostname to avoid purchasing a domain or unrelated DNS zone.
+- Named deployment role with MFA and approved release access. Staff use app accounts;
+  they do not need IAM accounts, AWS console access, root credentials or SSH.
+- Private backup/export location, retention, restore operator and log/data policy. Initially
+  export after changes or at least weekly; automate if activity increases. Agree the
+  acceptable data-loss window and verify a restore before launch.
+- Application maintainer, cost/incident recipient and acceptance of cold starts, throttling
+  at starting limits and no premium uptime SLA. Scale after measuring actual usage.
+- Cutover window, staff editing freeze if changing stores, rollback owner and permission
+  to retire old hosting only after this deployment and restore process are accepted.
 
-- **Account and billing:** approved account, Mumbai region, cost centre/tags, budget owner,
-  applicable taxes/conversion, and permission to incur the agreed recurring charges.
-- **Infrastructure:** permission for a dedicated instance, disk, one Elastic IP and a new
-  security group in an approved public subnet. Please provision these yourself or delegate
-  narrowly scoped creation access. Existing research instances/fleets will remain separate.
-- **Public URL:** approved production and temporary staging hostnames; DNS owner and who
-  will update records. Approval for public HTTPS access on ports 80/443 and certificate issuance.
-- **Operator access:** my named login/role, MFA, and SSH from an approved IP/VPN or SSM;
-  sudo on this server for installation, service management and patches. I do not need
-  account-wide AdministratorAccess or root credentials.
-- **Backups:** private S3 bucket/prefix, encrypted storage, versioning and lifecycle rules;
-  instance upload role and designated restore operators. Please approve retention and a
-  restore drill before launch. No AWS access keys will be embedded in the app.
-- **Data and policy:** approval to store the staff account data listed above; who may create
-  admins/reset passwords, log retention, and approved external forms/document hosts.
-- **Operations:** named infrastructure owner, application maintainer and backup/alert recipient;
-  patch schedule, recruitment-period traffic expectations and escalation contact.
-- **Availability:** acceptance of a single-server setup and brief nightly backup/restart
-  downtime. Daily backups target up to 24 hours' data loss; a 1–2 hour rebuild is a target to
-  validate, not a guaranteed SLA. Higher availability needs a separately priced design.
-- **Migration:** change window, staff editing freeze, DNS cutover/rollback owner, and approval
-  to retire Vercel/Upstash only after AWS and its restore procedure are accepted.
+The app needs a Lambda deployment adapter before this plan can deploy. The current
+Vercel implementation is not an unchanged Lambda deployment. Details and checks are in
+[AWS_MIGRATION.md](AWS_MIGRATION.md). Provisioning follows your approval and successful
+implementation checks.
 
-The deployment instructions and service/backup templates are in
-[AWS_MIGRATION.md](AWS_MIGRATION.md). I will deploy after these decisions are approved.
+## Narrow permissions for the AWS administrator
 
-## Permission details for the AWS administrator
+Prefer manager-provisioned resources and a deployment role limited to this project. These
+are capability groups to scope, not a wildcard IAM policy to paste.
 
-The simplest arrangement is **manager-provisioned AWS resources + limited operator access**.
-The application itself needs no EC2 administration permissions. The list below describes
-capabilities to scope; it is not an IAM policy to paste with wildcard access.
-
-| Who | Capability / typical AWS actions | Scope and purpose |
+| Identity | Typical actions | Scope |
 |---|---|---|
-| Manager/provisioner | EC2 `RunInstances`, `CreateTags`, `CreateSecurityGroup`, `AuthorizeSecurityGroupIngress`, `AllocateAddress`, `AssociateAddress`, `ModifyInstanceCreditSpecification`; relevant `Describe*` reads | Approved region/subnet, instance type, tags, security group, address and encrypted disk; apply account policy |
-| Operator, if delegated | `DescribeInstances`, `DescribeInstanceStatus`, `DescribeVolumes`, `DescribeSecurityGroups`, `DescribeInstanceCreditSpecifications`; approved `StartInstances`, `StopInstances`, `RebootInstances` | New careers instance/resources only where IAM supports resource scope; reads often need broader resource scope with region conditions |
-| SSM operator, if chosen | `ssm:StartSession`, `ResumeSession`, `TerminateSession`, relevant read actions | New instance, approved session document and own sessions; manager configures instance role/SSM connectivity |
-| Provisioner attaching role | `iam:PassRole` and instance-profile association capabilities | Only the approved careers instance role; passed only to EC2, not arbitrary roles |
-| Backup instance role | `s3:PutObject` | Only `APPROVED_BUCKET/kcdh-careers/*`; no delete, bucket administration or account access |
-| Restore operator | `s3:ListBucket`, `GetObject`, optionally `GetObjectVersion` | List restricted to the careers prefix, read only its archives; never public |
-| Manager/backup administrator | S3 bucket creation/configuration, public-access block, encryption, versioning, lifecycle | Dedicated approved bucket, or isolated prefix with an existing bucket's approved policies |
-| DNS owner | Route 53 record-change/read access if DNS is there | Approved hosted zone and careers record names; manager can perform changes instead of delegating |
-| Billing owner | Budget creation/updates, billing/Cost Explorer viewing | Manager retains this; provide project cost reports and agreed alerts |
+| Manager/provisioner | CloudFront distribution/Free subscription and origin-access-control creation; Lambda `CreateFunction`, `CreateFunctionUrlConfig`, `AddPermission`; S3 bucket/policy/configuration; execution-role creation | New careers resources only; manager retains billing/subscription control |
+| Deployment operator | Lambda `GetFunction`, `UpdateFunctionCode`, `UpdateFunctionConfiguration`, `PublishVersion`; approved CloudFront reads/updates/invalidations; S3 `PutObject`, `ListBucket` | Careers function/distribution and public-assets prefix; never publish private exports |
+| Provisioner attaching IAM role | `iam:PassRole` | Only the approved execution role, passed to Lambda |
+| Lambda runtime with Upstash | Minimal CloudWatch Logs writes | Own precreated log group; Upstash token in restricted configuration, never browser assets |
+| Lambda runtime with DynamoDB | `dynamodb:GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query`; additional reads only if implementation requires them | Single approved table/indexes; preserve conditional writes and expiry |
+| DynamoDB provisioner, if chosen | `CreateTable`, `DescribeTable`, `UpdateTimeToLive`, necessary tags/settings | Standard provisioned table with small fixed capacity; no unapproved autoscaling |
+| Backup/export operator | S3 `PutObject`, `GetObject`, prefix-restricted `ListBucket`; approved storage export reads | Private backup prefix, separate from frontend assets; no public access |
+| DNS/certificate owner | Approved record changes and ACM certificate issuance/validation | Careers records only; CloudFront custom-domain certificate in `us-east-1` |
+| Billing owner | Free Tier/Cost Explorer reads and agreed notifications/subscription control | Manager retains this; optional delegated read-only `freetier:GetFreeTierUsage` |
 
-SSM requires an appropriate instance role, e.g. the manager's approved equivalent of
-[AmazonSSMManagedInstanceCore](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-getting-started-instance-profile.html).
-SSE-S3 is assumed; if policy requires a customer-managed KMS key, approve its additional
-key permissions and costs. Termination, IP release and backup deletion should remain with
-the manager unless separately delegated. Lightsail needs a different service permission set.
+Protect both origins using CloudFront origin access control. Lambda resource permissions
+should grant `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` to the approved
+CloudFront distribution, rather than make the origin anonymously invokable. Application
+login remains necessary for staff API operations. No runtime EC2/IAM administration or
+access to all S3 buckets is needed.
 
-During the read-only account check, EC2 inventory was accessible, but Cost Explorer,
-Lightsail inventory and RDS inventory were denied. Those denials do not establish whether
-the services exist or whether deployment is authorised. The manager should confirm the
-account's policies and bill; the proposed plan does not need RDS access.
+Use blocked public S3 access, SSE-S3 and bounded backup retention. Price any policy-required
+custom KMS key, paid secrets service, DynamoDB backups/PITR or extra alarms before approval.
+Agree an export method that remains available when the free database reaches its limit.
 
-## Approval record to fill in
+## Approval record
 
 | Decision | Approved value / owner |
 |---|---|
-| EC2 or Lightsail; account and region | |
-| Cost centre, monthly budget, alert recipients | |
-| Production/staging domains and DNS owner | |
-| Instance/subnet/security group and access method | |
-| Maintainer role, OS access and instance backup role | |
-| Backup bucket/prefix, retention and restore owner | |
-| Application admin/contact, patch and log policy | |
-| Availability/recovery targets and monitoring owner | |
-| Cutover window, rollback owner and retirement approval | |
-| Manager approval/date and approved release commit | |
+| Account/region/tags and remaining service allowances | |
+| CloudFront Free eligibility and supplied/custom hostname | |
+| Upstash approved or DynamoDB chosen | |
+| $0 target, notification threshold and billing recipient | |
+| Deployment/execution roles and resource scope | |
+| DNS/certificate owner and applicable costs | |
+| Backup retention, restore operator and log/data policy | |
+| Maintainer, incident contact and recovery expectations | |
+| Approved release, cutover/rollback and retirement owner | |
+| Manager approval and date | |

@@ -59,7 +59,7 @@ and edit their own postings.** An admin account sees and edits everyone's.
 There is no self-service sign-up and no password-reset email — by design. People ask the
 maintainer, and the maintainer runs one command. With shared Redis these commands can run
 while the site is live. For an AWS file deployment, use the locked maintenance procedure
-in [AWS_MIGRATION.md](AWS_MIGRATION.md), avoiding overlapping account writes/backups.
+in [AWS_EC2_RUNBOOK.md](AWS_EC2_RUNBOOK.md), avoiding overlapping account writes/backups.
 
 ```bash
 .venv/bin/python server.py users                    # list accounts
@@ -188,12 +188,15 @@ not reset postings or accounts. Optional `MAINTAINER_EMAIL` overrides the sign-i
 
 ### Later migration to AWS
 
-Follow [AWS_MIGRATION.md](AWS_MIGRATION.md) for server sizing, current Mumbai cost estimates,
-copyable installation steps, Upstash data migration, HTTPS, backups and rollback. Use
+Follow [AWS_MIGRATION.md](AWS_MIGRATION.md) for free-first hosting choices, cost/allowance
+checks, implementation prerequisites, data migration and rollback. Use
 [MANAGER_APPROVAL.md](MANAGER_APPROVAL.md) for the manager request, budget and scoped
-permissions checklist. The initial EC2 plan is 1 GiB RAM, 2 burstable vCPUs and 16 GB disk:
-about $9.20/month before backups/tax, with a suggested $15 pre-tax budget. Recheck pricing
-before migration. These instructions do not change the Vercel deployment.
+permissions checklist. For rare visits/updates, target **$0/month** using CloudFront Free,
+on-demand Lambda and Upstash Free (or DynamoDB if all data must stay on AWS); expect small
+usage charges, typically **$0–$1/month**, after checking remaining account allowances.
+Lambda support still needs implementation; the current app supports Vercel, not Lambda.
+The [EC2 instructions](AWS_EC2_RUNBOOK.md) are an optional paid fallback. Recheck limits
+before migration. These documents do not change the Vercel deployment.
 
 ### Maintenance commands
 
